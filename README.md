@@ -67,6 +67,10 @@ Found a novel injection technique? Open a PR. See [CONTRIBUTING.md](./CONTRIBUTI
 - Don't submit attacks targeting specific named products (the goal is generic technique demonstration)
 - Don't include payloads optimized to bypass currently-deployed mitigations of specific vendors
 
+## More
+
+Part of a catalog of single-file browser tools and plain-language references, all MIT licensed and dependency-free: [0xelitesystem.github.io](https://0xelitesystem.github.io/). Built by [elitesystem.ai](https://elitesystem.ai).
+
 ## License
 
 MIT. The corpus is freely reusable for testing and education.
