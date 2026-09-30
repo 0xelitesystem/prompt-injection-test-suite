@@ -16,10 +16,39 @@ edit `send_request()` to match your API.
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
 from urllib import request, error
+
+# Characters a terminal treats as commands rather than text: C0 controls
+# except tab and newline, DEL, C1 controls, and bidi overrides. Test files
+# and target responses are untrusted, so these are escaped before printing.
+# A CR directly followed by LF is a normal CRLF line ending and cannot
+# overwrite text, so it is kept. Any other CR can, so it is escaped.
+_UNSAFE_CHARS = re.compile(r"\r(?!\n)|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def _safe(text):
+    """Return text with terminal control characters shown as \\xNN or \\uNNNN."""
+    def esc(m):
+        c = ord(m.group())
+        return ("\\x%02x" if c < 0x100 else "\\u%04x") % c
+    return _UNSAFE_CHARS.sub(esc, str(text))
+
+
+class _NoRedirect(request.HTTPRedirectHandler):
+    """Do not follow redirects, so the API key is never sent to another host.
+
+    A 3xx answer is raised as HTTPError and reported as "HTTP 30x: ...".
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = request.build_opener(_NoRedirect)
 
 
 def load_tests(tests_path, recursive=False):
@@ -84,7 +113,7 @@ def send_request(target_url, payload, api_key=None):
         headers["Authorization"] = f"Bearer {api_key}"
     req = request.Request(target_url, data=body, headers=headers, method="POST")
     try:
-        with request.urlopen(req, timeout=30) as resp:
+        with _OPENER.open(req, timeout=30) as resp:
             return resp.read().decode("utf-8")
     except error.HTTPError as e:
         return f"HTTP {e.code}: {e.read().decode('utf-8', errors='replace')}"
@@ -107,9 +136,9 @@ def main():
 
     if args.dry_run:
         for t in tests:
-            print(f"\n--- {t.get('id', '?')} [{t.get('category', '?')}] severity={t.get('severity', '?')} ---")
-            print(f"Goal: {t.get('goal', '')}")
-            print(f"Payload (first 200 chars): {t.get('payload', '')[:200]}")
+            print(f"\n--- {_safe(t.get('id', '?'))} [{_safe(t.get('category', '?'))}] severity={_safe(t.get('severity', '?'))} ---")
+            print(f"Goal: {_safe(t.get('goal', ''))}")
+            print(f"Payload (first 200 chars): {_safe(t.get('payload', '')[:200])}")
         return
 
     if not args.target:
@@ -118,7 +147,7 @@ def main():
 
     results = []
     for i, t in enumerate(tests, 1):
-        print(f"\n[{i}/{len(tests)}] {t.get('id', '?')}: {t.get('goal', '')}")
+        print(f"\n[{i}/{len(tests)}] {_safe(t.get('id', '?'))}: {_safe(t.get('goal', ''))}")
         response = send_request(args.target, t.get("payload", ""), api_key=args.api_key)
         # Naive judgment: caller should write better detection logic.
         # This is a placeholder that always logs the response for manual review.
@@ -128,7 +157,7 @@ def main():
             "severity": t.get("severity"),
             "response": response[:500] + "..." if len(response) > 500 else response,
         })
-        print(f"  Response (first 200 chars): {response[:200]}")
+        print(f"  Response (first 200 chars): {_safe(response[:200])}")
         time.sleep(args.delay)
 
     # Summary
